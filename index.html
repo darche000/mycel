@@ -261,6 +261,7 @@
   <div id="toolbar">
     <button id="playBtn">⏸</button>
     <button id="exportBtn">PNG</button>
+    <button id="hdBtn" title="High-res render">⬢ HD</button>
     <button id="recBtn" title="Record a clip">●&nbsp;Rec</button>
     <button id="randBtn" title="Randomize all seeds (R)">⟳&nbsp;Seed</button>
     <button id="saveBtn">Save</button>
@@ -301,6 +302,7 @@
     <div class="libitem" data-type="FlowField">FlowField <span class="tag">src</span></div>
     <div class="libitem" data-type="AntTrail">AntTrail <span class="tag">src</span></div>
     <div class="libitem" data-type="Webcam">Webcam <span class="tag">src</span></div>
+    <div class="libitem" data-type="ImageInput">Image <span class="tag">src</span></div>
     <div class="libitem" data-type="Audio">Audio <span class="tag">src</span></div>
     <div class="libitem" data-type="FaceBrackets">FaceBrackets <span class="tag">ai</span></div>
     <h3>Filters</h3>
@@ -540,6 +542,53 @@ const NODE_DEFS = {
         pt.px=pt.x; pt.py=pt.y;
       }
       g.colorMode(g.RGB,255);
+    }
+  },
+  ImageInput: {
+    inputs:0, params:[
+      {k:'fit', t:'select', opts:['cover','contain','stretch'], def:'cover'},
+      {k:'tint', t:'select', opts:['none','gray','sepia','invert'], def:'none'},
+      {k:'url', t:'text', def:''},
+    ],
+    proc(n,_,t,g){
+      if(!n.state) n.state={img:null,lastSrc:null,loading:false};
+      const src=n.p.dataUrl||n.p.url;
+      if(src && src!==n.state.lastSrc && !n.state.loading){
+        n.state.loading=true; n.state.lastSrc=src;
+        const img=new Image(); img.crossOrigin='anonymous';
+        img.onload=()=>{n.state.img=img; n.state.loading=false;};
+        img.onerror=()=>{n.state.loading=false; console.warn('Image load failed', src.slice(0,80));};
+        img.src=src;
+      }
+      g.background(0);
+      if(!n.state.img){
+        g.fill(120); g.noStroke(); g.textAlign(g.CENTER,g.CENTER); g.textSize(13);
+        g.text(src?'loading…':'drop image on canvas, or set URL/file in inspector', g.width/2, g.height/2);
+        return;
+      }
+      const img=n.state.img;
+      const ia=img.width/img.height, ga=g.width/g.height;
+      let dw=g.width,dh=g.height,dx=0,dy=0;
+      if(n.p.fit==='cover'){
+        if(ia>ga){dw=g.height*ia;dx=(g.width-dw)/2;} else {dh=g.width/ia;dy=(g.height-dh)/2;}
+      } else if(n.p.fit==='contain'){
+        if(ia>ga){dh=g.width/ia;dy=(g.height-dh)/2;} else {dw=g.height*ia;dx=(g.width-dw)/2;}
+      }
+      g.drawingContext.drawImage(img,dx,dy,dw,dh);
+      if(n.p.tint!=='none'){
+        g.loadPixels(); const px=g.pixels;
+        if(n.p.tint==='gray'){
+          for(let i=0;i<px.length;i+=4){const v=px[i]*0.299+px[i+1]*0.587+px[i+2]*0.114;px[i]=px[i+1]=px[i+2]=v;}
+        } else if(n.p.tint==='sepia'){
+          for(let i=0;i<px.length;i+=4){const r=px[i],gg=px[i+1],b=px[i+2];
+            px[i]=Math.min(255,r*0.393+gg*0.769+b*0.189);
+            px[i+1]=Math.min(255,r*0.349+gg*0.686+b*0.168);
+            px[i+2]=Math.min(255,r*0.272+gg*0.534+b*0.131);}
+        } else if(n.p.tint==='invert'){
+          for(let i=0;i<px.length;i+=4){px[i]=255-px[i];px[i+1]=255-px[i+1];px[i+2]=255-px[i+2];}
+        }
+        g.updatePixels();
+      }
     }
   },
   Audio: {
@@ -1760,6 +1809,25 @@ function renderInspector(){
   const def=NODE_DEFS[n.type];
   const t=document.createElement('div'); t.className='nodeTitle'; t.textContent=`${n.type} #${n.id}`;
   body.appendChild(t);
+  // ImageInput: file picker on top
+  if(n.type==='ImageInput'){
+    const pick=document.createElement('input'); pick.type='file'; pick.accept='image/*';
+    pick.style.cssText='width:100%;font-size:10px;color:var(--mut);margin-bottom:8px';
+    pick.onchange=e=>{
+      const f=e.target.files[0]; if(!f) return;
+      const fr=new FileReader();
+      fr.onload=()=>{n.p.dataUrl=fr.result; n.state=null; flash('Image loaded — '+(fr.result.length/1024|0)+'KB');};
+      fr.readAsDataURL(f);
+    };
+    body.appendChild(pick);
+    if(n.p.dataUrl){
+      const clr=document.createElement('button');
+      clr.textContent='clear image';
+      clr.style.cssText='font-size:10px;margin-bottom:8px;width:100%;background:transparent;border:1px solid var(--line);color:var(--mut);padding:4px;border-radius:3px;cursor:pointer;font-family:inherit';
+      clr.onclick=()=>{delete n.p.dataUrl; n.state=null; renderInspector();};
+      body.appendChild(clr);
+    }
+  }
   def.params.forEach(pr=>{
     const row=document.createElement('div'); row.className='row';
     const lab=document.createElement('label'); lab.textContent=pr.k; row.appendChild(lab);
@@ -1937,6 +2005,95 @@ document.getElementById('newBtn').onclick=()=>{
   flash('New sketch');
 };
 document.getElementById('helpBtn').onclick=()=>document.getElementById('helpModal').classList.add('show');
+
+/* ---------- drag-drop image onto canvas -------------------------------- */
+window.addEventListener('dragover',e=>{e.preventDefault();});
+window.addEventListener('drop',e=>{
+  e.preventDefault();
+  const f=e.dataTransfer?.files?.[0]; if(!f||!f.type.startsWith('image/')) return;
+  const fr=new FileReader();
+  fr.onload=()=>{
+    const x=20+(nodes.size%6)*150, y=20+Math.floor(nodes.size/6)*90;
+    const n=addNode('ImageInput', x, y);
+    n.p.dataUrl=fr.result; n.state=null;
+    select(n.id); drawWires();
+    flash('Image dropped — '+(fr.result.length/1024|0)+'KB');
+  };
+  fr.readAsDataURL(f);
+});
+
+/* ---------- high-res render -------------------------------------------- */
+async function renderHighRes(size){
+  const overlay=document.createElement('div');
+  Object.assign(overlay.style,{position:'fixed',inset:0,background:'rgba(0,0,0,0.7)',
+    backdropFilter:'blur(8px)',zIndex:200,display:'flex',alignItems:'center',justifyContent:'center',
+    color:'#7cf2c9',font:'12px ui-monospace,monospace',letterSpacing:'0.1em'});
+  overlay.innerHTML=`<div style="text-align:center"><div id="rhProg" style="font-size:18px">rendering ${size}×${size}…</div><div style="color:#666;margin-top:8px;font-size:10px">large renders may take 10–60s</div></div>`;
+  document.body.appendChild(overlay);
+  await new Promise(r=>setTimeout(r,30));
+  // detect stateful trail nodes → need warmup
+  const stateful=[...nodes.values()].some(n=>['FlowField','AntTrail','Feedback'].includes(n.type));
+  const warmup = stateful ? Math.min(120, Math.floor(80 - size/200)) : 1;
+  const oldRES=RES;
+  const oldBufs=new Map();
+  try{
+    RES=size;
+    for(const n of nodes.values()){
+      oldBufs.set(n.id,{buf:n.buf,state:n.state});
+      n.buf=p5Inst.createGraphics(size,size); n.buf.pixelDensity(1); n.state=null;
+    }
+    const t0=performance.now();
+    for(let i=0;i<warmup;i++){
+      evaluate((t0/1000)+i/60);
+      if(i%4===0){
+        document.getElementById('rhProg').textContent=`rendering ${size}×${size}… ${Math.round(i/warmup*100)}%`;
+        await new Promise(r=>setTimeout(r,0));
+      }
+    }
+    const out=[...nodes.values()].find(n=>n.type==='Output');
+    if(!out){ flash('Add an Output node'); }
+    else {
+      const link=document.createElement('a');
+      link.download=`mycel_${size}_${Date.now()}.png`;
+      link.href=out.buf.canvas.toDataURL('image/png');
+      link.click();
+      flash(`Saved ${size}×${size}`);
+    }
+  } catch(e){
+    console.error(e); flash('Render failed: '+e.message);
+  } finally {
+    RES=oldRES;
+    for(const n of nodes.values()){
+      const o=oldBufs.get(n.id);
+      if(o){ n.buf=o.buf; n.state=o.state; }
+    }
+    overlay.remove();
+  }
+}
+document.getElementById('hdBtn').onclick=()=>{
+  closeModulator();
+  const menu=document.createElement('div');
+  Object.assign(menu.style,{position:'fixed',top:'58px',left:'50%',transform:'translateX(-50%)',
+    background:'rgba(16,16,22,0.96)',backdropFilter:'blur(20px) saturate(180%)',
+    border:'1px solid rgba(255,255,255,0.14)',borderRadius:'10px',padding:'8px',zIndex:50,
+    boxShadow:'0 16px 40px rgba(0,0,0,0.55)',display:'flex',flexDirection:'column',gap:'2px',minWidth:'160px'});
+  const sizes=[
+    ['1024² · web', 1024],['2048² · social', 2048],['4096² · 4K', 4096],
+    ['6144² · A3 print', 6144],['8192² · 8K / poster', 8192],
+  ];
+  sizes.forEach(([lbl,sz])=>{
+    const b=document.createElement('button');
+    b.textContent=lbl;
+    Object.assign(b.style,{background:'transparent',color:'#e8e8ea',border:'1px solid transparent',
+      padding:'8px 12px',borderRadius:'6px',cursor:'pointer',font:'11px ui-monospace,monospace',textAlign:'left'});
+    b.onmouseenter=()=>b.style.background='rgba(124,242,201,0.12)';
+    b.onmouseleave=()=>b.style.background='transparent';
+    b.onclick=()=>{menu.remove(); renderHighRes(sz);};
+    menu.appendChild(b);
+  });
+  document.body.appendChild(menu);
+  setTimeout(()=>document.addEventListener('mousedown',function close(){menu.remove();document.removeEventListener('mousedown',close);}),0);
+};
 
 /* ---------- randomize all seeds ---------------------------------------- */
 function randomizeSeeds(){
@@ -2311,6 +2468,24 @@ const PRESETS={
       {type:'Output',x:790,y:30,p:{tint:'mono'}}],
     wires:[[0,1,0],[1,2,0],[2,4,0],[3,4,1],[4,3,0],[4,5,0]]
   },
+  'Image — Halftone':{
+    nodes:[{type:'ImageInput',x:30,y:30,p:{fit:'cover',tint:'gray',url:''}},
+      {type:'Halftone',x:230,y:30,p:{cell:8,invert:'no',shape:'circle'}},
+      {type:'Output',x:400,y:30,p:{tint:'mono'}}],
+    wires:[[0,1,0],[1,2,0]]
+  },
+  'Image — ASCII':{
+    nodes:[{type:'ImageInput',x:30,y:30,p:{fit:'cover',tint:'gray',url:''}},
+      {type:'ASCII',x:230,y:30,p:{mode:'grammar',cell:10,text:'MYCEL',fg:'green',bg:'black',jitter:0}},
+      {type:'Output',x:430,y:30,p:{tint:'mono'}}],
+    wires:[[0,1,0],[1,2,0]]
+  },
+  'Image — Polar':{
+    nodes:[{type:'ImageInput',x:30,y:30,p:{fit:'cover',tint:'none',url:''}},
+      {type:'Polar',x:230,y:30,p:{segments:8,twist:0,zoom:1}},
+      {type:'Output',x:400,y:30,p:{tint:'mono'}}],
+    wires:[[0,1,0],[1,2,0]]
+  },
   'Audio-Reactive Plasma':{
     nodes:[{type:'Audio',x:30,y:160,p:{gain:2,smoothing:0.7,view:'none',color:'cyan'}},
       {type:'Noise',x:30,y:30,p:{scale:0.005,octaves:4,seed:13,animate:0.004,contrast:1.4},
@@ -2421,7 +2596,7 @@ function loadFromStorage(){
     return false;
   }
 }
-const STUDIO_VERSION='8';
+const STUDIO_VERSION='9';
 // embed mode
 if(EMBED_MODE){
   document.body.classList.add('embed');
