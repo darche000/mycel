@@ -262,6 +262,8 @@
     <button id="playBtn">⏸</button>
     <button id="exportBtn">PNG</button>
     <button id="hdBtn" title="High-res render">⬢ HD</button>
+    <button id="svgBtn" title="SVG export (vector)">SVG</button>
+    <button id="batchBtn" title="Variations grid">▦ Vary</button>
     <button id="recBtn" title="Record a clip">●&nbsp;Rec</button>
     <button id="randBtn" title="Randomize all seeds (R)">⟳&nbsp;Seed</button>
     <button id="saveBtn">Save</button>
@@ -524,6 +526,8 @@ const NODE_DEFS = {
       // step particles
       const max=p.speed;
       g.strokeWeight(p.weight);
+      const rec=window.__svgRec;
+      if(rec && !st.svgPaths) st.svgPaths=[];
       for(const pt of st.particles){
         const cx=Math.max(0,Math.min(st.cols-1,Math.floor(pt.x/p.scale)));
         const cy=Math.max(0,Math.min(st.rows-1,Math.floor(pt.y/p.scale)));
@@ -538,6 +542,7 @@ const NODE_DEFS = {
         if(!wrapped){
           g.stroke(pt.hue,pt.sat,pt.bri,22);
           g.line(pt.x,pt.y,pt.px,pt.py);
+          if(rec) st.svgPaths.push([pt.px,pt.py,pt.x,pt.y]);
         }
         pt.px=pt.x; pt.py=pt.y;
       }
@@ -980,6 +985,8 @@ const NODE_DEFS = {
       const fg = p.fg==='black'?0:255;
       g.stroke(fg); g.strokeWeight(p.weight);
       const rand=n.state.rand || Math.random;
+      const rec=window.__svgRec;
+      if(rec && !n.state.svgPaths) n.state.svgPaths=[];
       for(const a of n.state.ants){
         a.a += a.bias + (rand()-0.5)*p.wander*2;
         a.px=a.x; a.py=a.y;
@@ -988,7 +995,10 @@ const NODE_DEFS = {
         let wrapped=false;
         if(a.x<0){a.x+=g.width;wrapped=true;} if(a.x>=g.width){a.x-=g.width;wrapped=true;}
         if(a.y<0){a.y+=g.height;wrapped=true;} if(a.y>=g.height){a.y-=g.height;wrapped=true;}
-        if(!wrapped) g.line(a.px,a.py,a.x,a.y);
+        if(!wrapped){
+          g.line(a.px,a.py,a.x,a.y);
+          if(rec) n.state.svgPaths.push([a.px,a.py,a.x,a.y]);
+        }
       }
     }
   },
@@ -2070,6 +2080,181 @@ async function renderHighRes(size){
     overlay.remove();
   }
 }
+/* ---------- SVG export -------------------------------------------------- */
+async function exportSvg(durationSec=4){
+  const vectorTypes=new Set(['AntTrail','FlowField','Contours','Grid','SquareTracking']);
+  const present=[...nodes.values()].filter(n=>vectorTypes.has(n.type));
+  if(present.length===0){ flash('Add an AntTrail / FlowField / Contours / Grid first'); return; }
+  const overlay=document.createElement('div');
+  Object.assign(overlay.style,{position:'fixed',inset:0,background:'rgba(0,0,0,0.7)',
+    backdropFilter:'blur(8px)',zIndex:200,display:'flex',alignItems:'center',justifyContent:'center',
+    color:'#7cf2c9',font:'12px ui-monospace,monospace'});
+  overlay.innerHTML=`<div style="text-align:center"><div id="svgProg">recording SVG…</div><div style="color:#666;margin-top:8px;font-size:10px">${durationSec}s capture</div></div>`;
+  document.body.appendChild(overlay);
+  await new Promise(r=>setTimeout(r,30));
+  // start recording
+  window.__svgRec=true;
+  for(const n of nodes.values()){ if(n.state){ n.state.svgPaths=[]; } }
+  const frames=durationSec*60;
+  const t0=performance.now()/1000;
+  for(let i=0;i<frames;i++){
+    evaluate(t0+i/60);
+    if(i%6===0){
+      document.getElementById('svgProg').textContent=`recording SVG… ${Math.round(i/frames*100)}%`;
+      await new Promise(r=>setTimeout(r,0));
+    }
+  }
+  // also pull single-frame vector content (Contours/Grid render every frame; just take last)
+  window.__svgRec=false;
+  const W=RES, H=RES;
+  let body='';
+  let lineCount=0;
+  for(const n of present){
+    if(!n.state?.svgPaths?.length) continue;
+    const stroke = n.type==='AntTrail' ? (n.p.fg==='black'?'#000':'#fff') : '#000';
+    const sw = n.p.weight || 1;
+    body+=`<g stroke="${stroke}" stroke-width="${sw}" stroke-linecap="round" fill="none">\n`;
+    for(const seg of n.state.svgPaths){
+      body+=`<line x1="${seg[0].toFixed(2)}" y1="${seg[1].toFixed(2)}" x2="${seg[2].toFixed(2)}" y2="${seg[3].toFixed(2)}"/>\n`;
+      lineCount++;
+    }
+    body+=`</g>\n`;
+  }
+  // Contours/Grid: regenerate fresh paths from current state (no recording needed)
+  for(const n of [...nodes.values()].filter(n=>n.type==='Contours')){
+    const inWires=wires.filter(w=>w.to===n.id);
+    if(!inWires.length) continue;
+    const src=nodes.get(inWires[0].from)?.buf; if(!src) continue;
+    src.loadPixels();
+    const c=n.p.cell, w=src.width, h=src.height, sp=src.pixels;
+    const sample=(x,y)=>sp[4*(Math.min(h-1,y)*w+Math.min(w-1,x))]/255;
+    body+=`<g stroke="#000" stroke-width="${n.p.weight}" fill="none" stroke-linecap="round">\n`;
+    for(let li=1;li<=n.p.levels;li++){
+      const th=li/(n.p.levels+1);
+      for(let y=0;y<h-c;y+=c)for(let x=0;x<w-c;x+=c){
+        const a=sample(x,y), b=sample(x+c,y), d=sample(x,y+c), e=sample(x+c,y+c);
+        let id=0;
+        if(a>th)id|=1; if(b>th)id|=2; if(e>th)id|=4; if(d>th)id|=8;
+        if(id===0||id===15) continue;
+        const tx=x+c/2, ty=y+c/2;
+        const T=[tx,y],R=[x+c,ty],B=[tx,y+c],L=[x,ty];
+        const seg=(p,q)=>{body+=`<line x1="${p[0]}" y1="${p[1]}" x2="${q[0]}" y2="${q[1]}"/>\n`; lineCount++;};
+        switch(id){
+          case 1:case 14: seg(L,T);break;
+          case 2:case 13: seg(T,R);break;
+          case 4:case 11: seg(R,B);break;
+          case 8:case 7:  seg(L,B);break;
+          case 3:case 12: seg(L,R);break;
+          case 6:case 9:  seg(T,B);break;
+          case 5: seg(L,T);seg(R,B);break;
+          case 10:seg(L,B);seg(T,R);break;
+        }
+      }
+    }
+    body+='</g>\n';
+  }
+  const svg=`<?xml version="1.0" encoding="UTF-8"?>\n<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${W} ${H}" width="${W}" height="${H}">\n${body}</svg>`;
+  const blob=new Blob([svg],{type:'image/svg+xml'});
+  const url=URL.createObjectURL(blob);
+  const a=document.createElement('a'); a.href=url; a.download=`mycel_${Date.now()}.svg`; a.click();
+  setTimeout(()=>URL.revokeObjectURL(url),2000);
+  overlay.remove();
+  flash(`Saved SVG · ${lineCount} segments · ${(blob.size/1024).toFixed(1)} KB`);
+}
+document.getElementById('svgBtn').onclick=()=>exportSvg(4);
+
+/* ---------- batch variations ------------------------------------------- */
+async function showVariations(){
+  const tile=240, gap=8;
+  const N=9;
+  const overlay=document.createElement('div');
+  Object.assign(overlay.style,{position:'fixed',inset:0,background:'rgba(0,0,0,0.85)',
+    backdropFilter:'blur(8px)',zIndex:200,display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',padding:'20px'});
+  overlay.innerHTML=`
+    <div style="color:#fff;font:12px ui-monospace,monospace;letter-spacing:0.1em;margin-bottom:14px;text-transform:uppercase;color:#7cf2c9">9 variations · click to load · Esc to close</div>
+    <div id="varGrid" style="display:grid;grid-template-columns:repeat(3,${tile}px);gap:${gap}px"></div>
+    <div id="varStatus" style="color:#888;font:10px ui-monospace,monospace;margin-top:14px">rendering 0/${N}…</div>`;
+  document.body.appendChild(overlay);
+  const close=()=>overlay.remove();
+  overlay.addEventListener('click',e=>{if(e.target===overlay) close();});
+  const escClose=e=>{if(e.key==='Escape'){close(); window.removeEventListener('keydown',escClose);}};
+  window.addEventListener('keydown',escClose);
+  const grid=overlay.querySelector('#varGrid');
+  // collect seed param keys per node
+  const seedTargets=[];
+  for(const n of nodes.values())
+    for(const k of Object.keys(n.p))
+      if(/seed/i.test(k)) seedTargets.push({id:n.id,k});
+  const seedSets=[];
+  for(let i=0;i<N;i++){
+    const m={};
+    for(const tg of seedTargets) m[tg.id+'.'+tg.k]=Math.floor(Math.random()*1e6)+1;
+    seedSets.push(m);
+  }
+  // save current state
+  const savedSeeds={};
+  for(const tg of seedTargets) savedSeeds[tg.id+'.'+tg.k]=nodes.get(tg.id).p[tg.k];
+  const savedBufs=new Map();
+  for(const n of nodes.values()) savedBufs.set(n.id,{buf:n.buf,state:n.state});
+  const oldRES=RES;
+  try{
+    const stateful=[...nodes.values()].some(n=>['FlowField','AntTrail','Feedback'].includes(n.type));
+    const warmup= stateful ? 40 : 1;
+    RES=tile;
+    for(let i=0;i<N;i++){
+      const cv=document.createElement('canvas');
+      cv.width=tile; cv.height=tile;
+      Object.assign(cv.style,{cursor:'pointer',borderRadius:'8px',border:'1px solid rgba(255,255,255,0.1)',transition:'transform .15s,border-color .15s'});
+      cv.onmouseenter=()=>{cv.style.transform='scale(1.04)';cv.style.borderColor='#7cf2c9'};
+      cv.onmouseleave=()=>{cv.style.transform='';cv.style.borderColor='rgba(255,255,255,0.1)'};
+      grid.appendChild(cv);
+      // apply seeds
+      for(const tg of seedTargets) nodes.get(tg.id).p[tg.k]=seedSets[i][tg.id+'.'+tg.k];
+      // fresh buffers + state per tile
+      for(const n of nodes.values()){
+        n.buf=p5Inst.createGraphics(tile,tile); n.buf.pixelDensity(1); n.state=null;
+      }
+      const t0=performance.now()/1000;
+      for(let f=0;f<warmup;f++){ evaluate(t0+f/60); }
+      const out=[...nodes.values()].find(n=>n.type==='Output');
+      if(out){ cv.getContext('2d').drawImage(out.buf.canvas,0,0,tile,tile); }
+      cv.onclick=()=>{
+        // commit these seeds to main graph
+        for(const tg of seedTargets) nodes.get(tg.id).p[tg.k]=seedSets[i][tg.id+'.'+tg.k];
+        // restore buffers (so main loop continues), but with new seeds
+        RES=oldRES;
+        for(const n of nodes.values()){
+          n.buf=p5Inst.createGraphics(RES,RES); n.buf.pixelDensity(1); n.state=null;
+        }
+        if(selectedId) renderInspector();
+        close();
+        flash('Loaded variation '+(i+1));
+      };
+      overlay.querySelector('#varStatus').textContent=`rendering ${i+1}/${N}…`;
+      await new Promise(r=>setTimeout(r,0));
+    }
+    overlay.querySelector('#varStatus').textContent='click any tile to load';
+    // restore live state if user closes without picking
+    overlay.addEventListener('mousedown',function restoreOnce(ev){
+      if(ev.target!==overlay) return;
+      overlay.removeEventListener('mousedown',restoreOnce);
+      RES=oldRES;
+      for(const tg of seedTargets) nodes.get(tg.id).p[tg.k]=savedSeeds[tg.id+'.'+tg.k];
+      for(const n of nodes.values()){
+        n.buf=p5Inst.createGraphics(RES,RES); n.buf.pixelDensity(1); n.state=null;
+      }
+    });
+  } catch(e){
+    console.error(e); flash('Variations failed: '+e.message);
+    RES=oldRES;
+    for(const tg of seedTargets) nodes.get(tg.id).p[tg.k]=savedSeeds[tg.id+'.'+tg.k];
+    for(const n of nodes.values()){
+      const o=savedBufs.get(n.id); if(o){n.buf=o.buf;n.state=o.state;}
+    }
+  }
+}
+document.getElementById('batchBtn').onclick=showVariations;
+
 document.getElementById('hdBtn').onclick=()=>{
   closeModulator();
   const menu=document.createElement('div');
