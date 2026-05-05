@@ -1,0 +1,260 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Mycel Gallery — Remixable Generative Art Sketches</title>
+<meta name="description" content="A growing gallery of generative art graphs — flow fields, halftone, ASCII, feedback loops, mirrored contours. Click any to open in the studio and remix." />
+<meta name="keywords" content="generative art gallery, creative coding examples, p5.js sketches, generative design inspiration, remix art, flow field, halftone, ASCII art" />
+<meta name="theme-color" content="#06070b" />
+<link rel="canonical" href="/gallery.html" />
+<meta property="og:site_name" content="Mycel" />
+<meta property="og:title" content="Mycel Gallery — Generative Art Sketches" />
+<meta property="og:description" content="Browse and remix generative art graphs in your browser." />
+<meta property="og:type" content="website" />
+<meta property="og:image" content="og.png" />
+<meta name="twitter:card" content="summary_large_image" />
+<meta name="twitter:title" content="Mycel Gallery" />
+<meta name="twitter:description" content="Browse and remix generative art." />
+<meta name="twitter:image" content="og.png" />
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='16' cy='16' r='8' fill='%237cf2c9'/%3E%3C/svg%3E" />
+<script type="application/ld+json">
+{
+  "@context":"https://schema.org",
+  "@type":"CollectionPage",
+  "name":"Mycel Gallery",
+  "description":"Curated collection of remixable generative art sketches built in Mycel."
+}
+</script>
+<style>
+  :root{ --bg:#06070b; --txt:#e8e8ea; --mut:#8a8a93; --acc:#7cf2c9; --line:rgba(255,255,255,0.08); }
+  *{box-sizing:border-box}
+  html,body{margin:0;background:var(--bg);color:var(--txt);
+    font:14px/1.5 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+  header{padding:48px 32px 24px;display:flex;justify-content:space-between;align-items:flex-end;
+    border-bottom:1px solid var(--line);position:sticky;top:0;
+    background:linear-gradient(180deg,rgba(6,7,11,0.95),rgba(6,7,11,0.85));
+    backdrop-filter:blur(18px);-webkit-backdrop-filter:blur(18px);z-index:10}
+  h1{margin:0;font-size:32px;font-weight:600;letter-spacing:0}
+  h1 .dot{color:var(--acc);margin-right:6px}
+  .tagline{color:var(--mut);margin-top:6px;font-size:13px}
+  .nav a{color:var(--txt);text-decoration:none;margin-left:18px;font-size:12px;
+    padding:8px 14px;border:1px solid var(--line);border-radius:6px;transition:all .15s}
+  .nav a:hover{border-color:var(--acc);color:var(--acc)}
+  .nav a.cta{background:var(--acc);color:#000;border-color:var(--acc)}
+  .nav a.cta:hover{background:#fff;border-color:#fff;color:#000}
+  main{padding:32px;max-width:1400px;margin:0 auto}
+  .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:20px}
+  .card{background:#0e1015;border:1px solid var(--line);border-radius:8px;overflow:hidden;
+    transition:transform .2s,border-color .2s,box-shadow .2s;cursor:pointer;text-decoration:none;color:inherit;display:block}
+  .card:hover{transform:translateY(-3px);border-color:rgba(124,242,201,0.4);
+    box-shadow:0 16px 40px rgba(0,0,0,0.5),0 0 0 1px rgba(124,242,201,0.2)}
+  .thumb{aspect-ratio:1/1;background:#000;position:relative;overflow:hidden}
+  .thumb iframe{width:100%;height:100%;border:0;pointer-events:none}
+  .thumb .overlay{position:absolute;inset:0;display:flex;align-items:flex-end;
+    background:linear-gradient(180deg,transparent 60%,rgba(0,0,0,0.7));padding:14px;
+    font-size:11px;color:var(--mut);text-transform:uppercase;letter-spacing:0.1em;opacity:0;transition:opacity .2s}
+  .card:hover .thumb .overlay{opacity:1}
+  .meta{padding:14px 16px}
+  .meta h3{margin:0 0 4px;font-size:14px;font-weight:500}
+  .meta .tags{color:var(--mut);font-size:11px}
+  section.hero{padding:48px 32px;text-align:center;border-bottom:1px solid var(--line)}
+  section.hero p{max-width:540px;margin:8px auto 0;color:var(--mut);font-size:14px;line-height:1.7}
+  .filter{display:flex;gap:8px;margin-bottom:24px;flex-wrap:wrap}
+  .chip{padding:6px 12px;border:1px solid var(--line);border-radius:20px;font-size:11px;cursor:pointer;
+    color:var(--mut);background:transparent;font-family:inherit}
+  .chip.active{border-color:var(--acc);color:var(--acc);background:rgba(124,242,201,0.08)}
+  footer{padding:48px 32px;text-align:center;color:var(--mut);font-size:11px;border-top:1px solid var(--line)}
+  @media (max-width:680px){
+    header{position:static;align-items:flex-start;flex-direction:column;gap:16px;padding:28px 18px 18px}
+    .nav a{display:inline-block;margin:0 8px 8px 0}
+    section.hero{padding:28px 18px}
+    main{padding:18px}
+    .grid{grid-template-columns:1fr}
+  }
+</style>
+</head>
+<body>
+<header>
+  <div>
+    <h1><span class="dot">●</span>mycel</h1>
+    <div class="tagline">node-based generative graphics, in your browser</div>
+  </div>
+  <div class="nav">
+    <a href="index.html">Open Studio</a>
+    <a class="cta" href="index.html">+ New Sketch</a>
+  </div>
+</header>
+
+<section class="hero">
+  <p>A growing gallery of remixable graphs. Click any to open it in the studio — tweak parameters, rewire nodes, share your version.</p>
+</section>
+
+<main>
+  <div class="filter" id="filter"></div>
+  <div class="grid" id="grid"></div>
+</main>
+
+<footer>
+  Every thumbnail is a live render. Built with p5.js. Made by you.
+</footer>
+
+<script>
+/* ---------------- gallery items -------------------------------------- */
+/* Each item: {name, tags, graph} where graph matches studio preset format */
+const ITEMS = [
+  { name:'Halftone Noise', tags:['source','classic'], graph:{
+    nodes:[{type:'Noise',x:30,y:30,p:{scale:0.006,octaves:3,seed:1,animate:0.003,contrast:1.6}},
+      {type:'Halftone',x:200,y:30,p:{cell:10,invert:'no',shape:'circle'}},
+      {type:'Output',x:370,y:30,p:{tint:'mono'}}],
+    wires:[[0,1,0],[1,2,0]]
+  }},
+  { name:'Mirrored Contours', tags:['mirror','contour'], graph:{
+    nodes:[{type:'Noise',x:30,y:30,p:{scale:0.012,octaves:5,seed:3,animate:0.004,contrast:2}},
+      {type:'Contours',x:200,y:30,p:{levels:10,cell:3,weight:0.7}},
+      {type:'Mirror',x:370,y:30,p:{axis:'quad'}},
+      {type:'Output',x:540,y:30,p:{tint:'mono'}}],
+    wires:[[0,1,0],[1,2,0],[2,3,0]]
+  }},
+  { name:'Liquid Mandala', tags:['polar','color'], graph:{
+    nodes:[{type:'Noise',x:30,y:30,p:{scale:0.008,octaves:4,seed:21,animate:0.004,contrast:1.5}},
+      {type:'Colorize',x:200,y:30,p:{palette:'magma',shift:0}},
+      {type:'Polar',x:370,y:30,p:{segments:8,twist:0,zoom:1}},
+      {type:'Output',x:540,y:30,p:{tint:'mono'}}],
+    wires:[[0,1,0],[1,2,0],[2,3,0]]
+  }},
+  { name:'Recursive Glow', tags:['feedback','flow'], graph:{
+    nodes:[{type:'FlowField',x:30,y:30,p:{count:1500,scale:18,noiseInc:0.06,speed:2,curl:3,drift:0.002,fade:0,weight:1.2,palette:'aurora',seed:33}},
+      {type:'Feedback',x:230,y:30,p:{decay:3,shift:0,zoom:0.995,rotate:0.5}},
+      {type:'Blend',x:430,y:30,p:{mode:'screen',mix:0.9}},
+      {type:'Bloom',x:600,y:30,p:{radius:8,intensity:1,threshold:0.3}},
+      {type:'Output',x:770,y:30,p:{tint:'mono'}}],
+    wires:[[0,2,0],[1,2,1],[2,1,0],[2,3,0],[3,4,0]]
+  }},
+  { name:'Sand Trails', tags:['ant','grain'], graph:{
+    nodes:[{type:'AntTrail',x:30,y:30,p:{count:300,speed:0.9,wander:0.12,spiralBias:0.0,fade:0,weight:1.2,bg:'white',fg:'black',seed:5}},
+      {type:'Grain',x:230,y:30,p:{amount:35,size:1,mono:'mono'}},
+      {type:'Output',x:400,y:30,p:{tint:'warm'}}],
+    wires:[[0,1,0],[1,2,0]]
+  }},
+  { name:'Ant Spirals', tags:['ant'], graph:{
+    nodes:[{type:'AntTrail',x:30,y:30,p:{count:800,speed:1.2,wander:0.08,spiralBias:0.12,fade:0,weight:0.8,bg:'white',fg:'black',seed:3}},
+      {type:'Output',x:230,y:30,p:{tint:'mono'}}],
+    wires:[[0,1,0]]
+  }},
+  { name:'Neon HUD', tags:['neon','tracking'], graph:{
+    nodes:[{type:'Noise',x:30,y:30,p:{scale:0.012,octaves:5,seed:7,animate:0.002,contrast:2}},
+      {type:'Threshold',x:200,y:30,p:{level:0.55}},
+      {type:'NeonPixels',x:370,y:30,p:{block:10,threshold:0.3,glow:8,color:'green'}},
+      {type:'SquareTracking',x:540,y:30,p:{maxBoxes:5,minSize:50,maxSize:160,corner:16,weight:1.4,color:'green',smoothing:0.12,refresh:8,threshold:0.5,links:'nearest',labels:'value',birthTime:0.08}},
+      {type:'Output',x:760,y:30,p:{tint:'mono'}}],
+    wires:[[0,1,0],[1,2,0],[2,3,0],[3,4,0]]
+  }},
+  { name:'Code Rain', tags:['ascii'], graph:{
+    nodes:[{type:'Noise',x:30,y:30,p:{scale:0.004,octaves:3,seed:42,animate:0.005,contrast:1.5}},
+      {type:'ASCII',x:200,y:30,p:{mode:'matrix',cell:14,text:'01ｱｲｳｴｵMYCEL',fg:'green',bg:'black',jitter:0}},
+      {type:'Output',x:400,y:30,p:{tint:'mono'}}],
+    wires:[[0,1,0],[1,2,0]]
+  }},
+  { name:'ASCII Edges', tags:['ascii'], graph:{
+    nodes:[{type:'Noise',x:30,y:30,p:{scale:0.006,octaves:4,seed:7,animate:0.003,contrast:1.6}},
+      {type:'ASCII',x:200,y:30,p:{mode:'edges',cell:12,text:'MYCEL',fg:'green',bg:'black',jitter:0}},
+      {type:'Output',x:400,y:30,p:{tint:'mono'}}],
+    wires:[[0,1,0],[1,2,0]]
+  }},
+  { name:'Plasma', tags:['color','bloom'], graph:{
+    nodes:[{type:'Noise',x:30,y:30,p:{scale:0.005,octaves:4,seed:13,animate:0.006,contrast:1.4}},
+      {type:'Colorize',x:200,y:30,p:{palette:'plasma',shift:0}},
+      {type:'Bloom',x:370,y:30,p:{radius:8,intensity:1,threshold:0.5}},
+      {type:'Output',x:540,y:30,p:{tint:'mono'}}],
+    wires:[[0,1,0],[1,2,0],[2,3,0]]
+  }},
+  { name:'Glitch Tower', tags:['mirror','classic'], graph:{
+    nodes:[{type:'Noise',x:30,y:30,p:{scale:0.02,octaves:6,seed:42,animate:0.005,contrast:2.5}},
+      {type:'Threshold',x:200,y:30,p:{level:0.55}},
+      {type:'Contours',x:370,y:30,p:{levels:6,cell:3,weight:1}},
+      {type:'Mirror',x:540,y:30,p:{axis:'x'}},
+      {type:'Output',x:710,y:30,p:{tint:'mono'}}],
+    wires:[[0,1,0],[1,2,0],[2,3,0],[3,4,0]]
+  }},
+  { name:'Warp Storm', tags:['warp','color'], graph:{
+    nodes:[{type:'Noise',x:30,y:30,p:{scale:0.004,octaves:4,seed:11,animate:0.002,contrast:1.8}},
+      {type:'Noise',x:30,y:130,p:{scale:0.02,octaves:3,seed:99,animate:0.005,contrast:1.5}},
+      {type:'Warp',x:230,y:80,p:{amount:30,cell:2}},
+      {type:'Colorize',x:400,y:80,p:{palette:'ocean',shift:0}},
+      {type:'Output',x:570,y:80,p:{tint:'mono'}}],
+    wires:[[0,2,0],[1,2,1],[2,3,0],[3,4,0]]
+  }},
+];
+
+/* ---------------- encode + render -------------------------------------- */
+const textEncoder = new TextEncoder();
+
+function bytesToBase64Url(bytes){
+  let bin='';
+  const chunk=0x8000;
+  for(let i=0;i<bytes.length;i+=chunk){
+    bin += String.fromCharCode(...bytes.subarray(i, i+chunk));
+  }
+  return btoa(bin).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');
+}
+
+async function encodeGraph(obj){
+  const json=JSON.stringify(obj);
+  if(typeof CompressionStream==='undefined'){
+    return 'j.'+bytesToBase64Url(textEncoder.encode(json));
+  }
+  const cs=new CompressionStream('gzip');
+  const w=cs.writable.getWriter();
+  w.write(textEncoder.encode(json)); w.close();
+  const buf=await new Response(cs.readable).arrayBuffer();
+  return 'g.'+bytesToBase64Url(new Uint8Array(buf));
+}
+
+async function renderCard(item){
+  const enc=await encodeGraph({nodes:item.graph.nodes.map((n,i)=>({...n,id:i+1})),
+    wires:item.graph.wires.map(w=>({from:w[0]+1,to:w[1]+1,toPort:w[2]||0}))});
+  const url=`index.html?embed=1&res=320#${enc}`;
+  const studioUrl=`index.html#${enc}`;
+  const a=document.createElement('a');
+  a.className='card'; a.href=studioUrl;
+  a.innerHTML=`
+    <div class="thumb">
+      <iframe src="${url}" loading="lazy"></iframe>
+      <div class="overlay">click to remix →</div>
+    </div>
+    <div class="meta">
+      <h3>${item.name}</h3>
+      <div class="tags">${item.tags.join(' · ')}</div>
+    </div>`;
+  return a;
+}
+
+/* ---------------- filtering ------------------------------------------- */
+const tagSet=new Set(['all']);
+ITEMS.forEach(i=>i.tags.forEach(t=>tagSet.add(t)));
+const filterEl=document.getElementById('filter');
+const gridEl=document.getElementById('grid');
+let active='all';
+
+function renderFilters(){
+  filterEl.innerHTML='';
+  [...tagSet].forEach(t=>{
+    const b=document.createElement('button');
+    b.className='chip'+(t===active?' active':'');
+    b.textContent=t;
+    b.onclick=()=>{active=t; renderFilters(); renderGrid();};
+    filterEl.appendChild(b);
+  });
+}
+async function renderGrid(){
+  gridEl.innerHTML='';
+  const items=ITEMS.filter(i=>active==='all'||i.tags.includes(active));
+  for(const it of items){
+    gridEl.appendChild(await renderCard(it));
+  }
+}
+renderFilters(); renderGrid();
+</script>
+</body>
+</html>
