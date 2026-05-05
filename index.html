@@ -240,14 +240,16 @@
     <p>Wire <b>source</b> nodes (Noise, FlowField, Webcam) into <b>filter</b> nodes (Halftone, ASCII, Polar, Bloom…) and out to an <b>Output</b>. Drag nodes from the Library on the left, click to edit parameters on the right.</p>
     <h4>Wiring</h4>
     <p>Drag from a node's <b>right port</b> to another's <b>left port</b>. Right-click a node to delete. The <b>Feedback</b> node lets you make loops.</p>
-    <h4>Audio reactive</h4>
-    <p>Add an <b>Audio</b> node and grant mic access. Then click the <b>⚡</b> next to any slider to bind it to <i>bass / mid / high / level / beat</i>. Amount can be negative for inverse reactivity.</p>
+    <h4>Animation & audio</h4>
+    <p>Click the <b>⚡</b> next to any slider to bind it to a <i>time</i> wave (sine / triangle / ramp / pulse) for built-in animation, or to an <i>audio</i> band (needs an Audio node + mic) for reactivity. Negative amount = inverse.</p>
+    <h4>Layers</h4>
+    <p>Use the <b>Stack</b> node to composite up to 4 inputs Photoshop-style — pick a blend mode and opacity per layer.</p>
+    <h4>Export</h4>
+    <p><b>PNG</b>: current frame &nbsp; <b>HD</b>: re-render at any size up to 8K &nbsp; <b>SVG</b>: vector export from AntTrail / FlowField / Contours &nbsp; <b>Rec</b>: WebM video clip (shift-click for length)</p>
     <h4>Sharing</h4>
     <p>Click <b>↗ Share</b> to copy a remix link — anyone who opens it gets the exact graph and can tweak it. Try the <a href="gallery.html">Gallery</a> for inspiration.</p>
     <h4>Shortcuts</h4>
     <p><kbd>Space</kbd> play/pause &nbsp; <kbd>Delete</kbd> remove selected node &nbsp; right-click a node to delete</p>
-    <h4>Export</h4>
-    <p>Click <b>PNG</b> to save the current frame at the chosen resolution.</p>
   </div>
 </div>
 <div id="remixBanner" style="display:none;position:fixed;top:14px;left:50%;transform:translateX(-50%);
@@ -326,6 +328,7 @@
     <h3>Composite</h3>
     <div class="libitem" data-type="Blend">Blend <span class="tag">2-in</span></div>
     <div class="libitem" data-type="Mask">Mask <span class="tag">2-in</span></div>
+    <div class="libitem" data-type="Stack">Stack <span class="tag">4-layer</span></div>
     <div class="libitem" data-type="Warp">Warp <span class="tag">2-in</span></div>
     <div class="libitem" data-type="Feedback">Feedback <span class="tag">loop</span></div>
     <h3>Output</h3>
@@ -1518,6 +1521,32 @@ const NODE_DEFS = {
       g.updatePixels();
     }
   },
+  Stack: {
+    inputs:4, params:[
+      {k:'mode1', t:'select', opts:['normal','multiply','screen','difference','add','subtract','lighter','darker'], def:'normal'},
+      {k:'op1',   t:'range',  min:0, max:1, step:0.01, def:1},
+      {k:'mode2', t:'select', opts:['normal','multiply','screen','difference','add','subtract','lighter','darker'], def:'screen'},
+      {k:'op2',   t:'range',  min:0, max:1, step:0.01, def:1},
+      {k:'mode3', t:'select', opts:['normal','multiply','screen','difference','add','subtract','lighter','darker'], def:'screen'},
+      {k:'op3',   t:'range',  min:0, max:1, step:0.01, def:1},
+      {k:'mode4', t:'select', opts:['normal','multiply','screen','difference','add','subtract','lighter','darker'], def:'screen'},
+      {k:'op4',   t:'range',  min:0, max:1, step:0.01, def:1},
+    ],
+    proc(n,ins,t,g){
+      g.background(0);
+      const map={normal:p5Inst.BLEND,multiply:p5Inst.MULTIPLY,screen:p5Inst.SCREEN,difference:p5Inst.DIFFERENCE,
+        add:p5Inst.ADD,subtract:p5Inst.SUBTRACT,lighter:p5Inst.LIGHTEST,darker:p5Inst.DARKEST};
+      for(let i=0;i<4;i++){
+        const layer=ins[i]; if(!layer) continue;
+        const mode=n.p['mode'+(i+1)], op=n.p['op'+(i+1)];
+        if(op<=0) continue;
+        g.blendMode(map[mode]||p5Inst.BLEND);
+        g.tint(255, op*255);
+        g.image(layer,0,0);
+      }
+      g.blendMode(p5Inst.BLEND); g.noTint();
+    }
+  },
   Blend: {
     inputs:2, params:[
       {k:'mode', t:'select', opts:['multiply','screen','difference','add','subtract','lighter','darker'], def:'screen'},
@@ -1612,13 +1641,24 @@ function gatherInputs(n){
   return inputs;
 }
 function applyMods(n){
-  if(!n.mods || !window.mycelAudio) return null;
+  if(!n.mods) return null;
   const def=NODE_DEFS[n.type];
   let touched=false, base=null;
+  const tNow=performance.now()/1000;
   for(const [k, mod] of Object.entries(n.mods)){
     if(!mod || !mod.band) continue;
-    const av=window.mycelAudio[mod.band];
-    if(av===undefined) continue;
+    let av=null;
+    if(mod.band.startsWith('time.')){
+      const period=mod.period||4;
+      const phase = (tNow % period) / period; // 0..1
+      if(mod.band==='time.sine')      av = (Math.sin(phase*Math.PI*2)+1)/2;
+      else if(mod.band==='time.tri')  av = phase<0.5 ? phase*2 : (1-phase)*2;
+      else if(mod.band==='time.ramp') av = phase;
+      else if(mod.band==='time.pulse')av = phase<0.1 ? 1 : 0;
+    } else if(window.mycelAudio){
+      av=window.mycelAudio[mod.band];
+    }
+    if(av===null||av===undefined) continue;
     const pdef=def.params.find(pp=>pp.k===k);
     if(!pdef || pdef.t!=='range') continue;
     if(!touched){ base={...n.p}; touched=true; }
@@ -1705,10 +1745,18 @@ function renderNode(n){
   const def=NODE_DEFS[n.type];
   el.innerHTML=`<div class="hd"><span class="ttl">${n.type}</span><span class="typ">#${n.id}</span></div>
     <div class="body">${def.inputs} in · ${n.type==='Output'?'sink':'1 out'}</div>`;
-  if(def.inputs===1) el.innerHTML+=`<div class="port in" data-port="0"></div>`;
-  if(def.inputs===2){
-    el.innerHTML+=`<div class="port in in1of2" data-port="0"></div>
-                   <div class="port in in2" data-port="1"></div>`;
+  if(def.inputs>0){
+    if(def.inputs===1){
+      el.innerHTML+=`<div class="port in" data-port="0"></div>`;
+    } else {
+      // distribute vertically: top:15% .. 85%
+      for(let i=0;i<def.inputs;i++){
+        const top = 15 + (70/(def.inputs-1))*i;
+        el.innerHTML+=`<div class="port in" data-port="${i}" style="top:${top}%"></div>`;
+      }
+      // taller node body so ports are reachable
+      el.style.minHeight = (24 + def.inputs*22) + 'px';
+    }
   }
   if(n.type!=='Output') el.innerHTML+=`<div class="port out"></div>`;
   network.appendChild(el);
@@ -1891,34 +1939,52 @@ function openModulator(n, pr, anchor){
     <div class="row"><label>Source</label>
       <select class="band">
         <option value="">— none —</option>
-        <option value="level">level</option>
-        <option value="bass">bass</option>
-        <option value="mid">mid</option>
-        <option value="high">high</option>
-        <option value="beat">beat (kick)</option>
+        <optgroup label="audio">
+          <option value="level">level</option>
+          <option value="bass">bass</option>
+          <option value="mid">mid</option>
+          <option value="high">high</option>
+          <option value="beat">beat (kick)</option>
+        </optgroup>
+        <optgroup label="time">
+          <option value="time.sine">sine wave</option>
+          <option value="time.tri">triangle</option>
+          <option value="time.ramp">ramp (sawtooth)</option>
+          <option value="time.pulse">pulse (10% on)</option>
+        </optgroup>
       </select>
     </div>
     <div class="row"><label>Amount</label>
       <input type="range" class="amt" min="-1" max="1" step="0.01" />
     </div>
+    <div class="row periodRow" style="display:none"><label>Period s</label>
+      <input type="range" class="period" min="0.2" max="20" step="0.1" />
+    </div>
     <div class="row"><label></label><div class="amtVal"></div></div>
     <button class="clear">unbind</button>
-    <div class="hint">Add an Audio node to capture the mic. Amount × (max−min) is added to the base value, scaled by the audio band 0–1.</div>`;
+    <div class="hint">audio = needs an Audio node. time = animates by a clock. Negative amount = inverse.</div>`;
   document.body.appendChild(modPop);
   const bandSel=modPop.querySelector('.band');
   const amtIn=modPop.querySelector('.amt');
   const amtVal=modPop.querySelector('.amtVal');
+  const periodIn=modPop.querySelector('.period');
+  const periodRow=modPop.querySelector('.periodRow');
   bandSel.value=cur.band||'';
   amtIn.value=cur.amount;
+  periodIn.value=cur.period||4;
   amtVal.textContent=Number(cur.amount).toFixed(2);
+  const refreshPeriod=()=>{ periodRow.style.display = bandSel.value?.startsWith('time.') ? 'grid' : 'none'; };
+  refreshPeriod();
   const update=()=>{
-    n.mods[pr.k]={band:bandSel.value||null, amount:parseFloat(amtIn.value)};
-    if(!bandSel.value) delete n.mods[pr.k];
+    if(!bandSel.value){ delete n.mods[pr.k]; }
+    else { n.mods[pr.k]={band:bandSel.value, amount:parseFloat(amtIn.value), period:parseFloat(periodIn.value)}; }
     anchor.classList.toggle('bound', !!n.mods[pr.k]?.band);
     amtVal.textContent=parseFloat(amtIn.value).toFixed(2);
+    refreshPeriod();
   };
   bandSel.onchange=update;
   amtIn.oninput=update;
+  periodIn.oninput=update;
   modPop.querySelector('.clear').onclick=()=>{
     delete n.mods[pr.k]; anchor.classList.remove('bound'); closeModulator();
   };
@@ -2300,7 +2366,7 @@ document.getElementById('randBtn').onclick=randomizeSeeds;
 
 /* ---------- record clip (canvas → webm) -------------------------------- */
 let mediaRecorder=null, recChunks=[], recTimer=null;
-const RECORD_SECONDS=6;
+let RECORD_SECONDS=parseInt(localStorage.getItem('mycel_recLen')||'6');
 async function startRecording(){
   const cv=document.querySelector('#previewCanvasHolder canvas');
   if(!cv){flash('No canvas');return;}
@@ -2339,9 +2405,29 @@ function stopRecording(){
   if(recTimer){ clearInterval(recTimer); recTimer=null; }
   if(mediaRecorder && mediaRecorder.state!=='inactive') mediaRecorder.stop();
 }
-document.getElementById('recBtn').onclick=()=>{
-  if(mediaRecorder && mediaRecorder.state==='recording') stopRecording();
-  else startRecording();
+document.getElementById('recBtn').onclick=ev=>{
+  if(mediaRecorder && mediaRecorder.state==='recording'){ stopRecording(); return; }
+  // shift-click → length picker
+  if(ev.shiftKey){
+    const opts=[3,6,12,30,60];
+    const menu=document.createElement('div');
+    Object.assign(menu.style,{position:'fixed',top:'58px',left:'50%',transform:'translateX(-50%)',
+      background:'rgba(16,16,22,0.96)',backdropFilter:'blur(20px)',
+      border:'1px solid rgba(255,255,255,0.14)',borderRadius:'10px',padding:'8px',zIndex:50,display:'flex',gap:'4px'});
+    opts.forEach(s=>{
+      const b=document.createElement('button');
+      b.textContent=s+'s';
+      Object.assign(b.style,{background:s===RECORD_SECONDS?'rgba(124,242,201,0.2)':'transparent',
+        color:s===RECORD_SECONDS?'#7cf2c9':'#e8e8ea',border:'1px solid rgba(255,255,255,0.1)',
+        padding:'6px 12px',borderRadius:'6px',cursor:'pointer',font:'11px ui-monospace,monospace'});
+      b.onclick=()=>{RECORD_SECONDS=s; localStorage.setItem('mycel_recLen',s); menu.remove(); flash('Record length: '+s+'s');};
+      menu.appendChild(b);
+    });
+    document.body.appendChild(menu);
+    setTimeout(()=>document.addEventListener('mousedown',function close(){menu.remove();document.removeEventListener('mousedown',close);}),0);
+    return;
+  }
+  startRecording();
 };
 window.addEventListener('keydown',e=>{
   if(e.key==='Escape') document.getElementById('helpModal').classList.remove('show');
@@ -2653,6 +2739,26 @@ const PRESETS={
       {type:'Output',x:790,y:30,p:{tint:'mono'}}],
     wires:[[0,1,0],[1,2,0],[2,4,0],[3,4,1],[4,3,0],[4,5,0]]
   },
+  'Stacked Layers':{
+    nodes:[{type:'Noise',x:30,y:30,p:{scale:0.005,octaves:3,seed:1,animate:0.003,contrast:1.4}},
+      {type:'FlowField',x:30,y:130,p:{count:1500,scale:18,noiseInc:0.06,speed:1.8,curl:3,drift:0.002,fade:6,weight:1,palette:'aurora',seed:2}},
+      {type:'Noise',x:30,y:230,p:{scale:0.02,octaves:5,seed:9,animate:0.005,contrast:2}},
+      {type:'Solid',x:30,y:330,p:{value:30}},
+      {type:'Stack',x:240,y:30,p:{mode1:'normal',op1:1,mode2:'screen',op2:0.7,mode3:'difference',op3:0.3,mode4:'normal',op4:0}},
+      {type:'Bloom',x:430,y:30,p:{radius:6,intensity:0.8,threshold:0.4}},
+      {type:'Output',x:600,y:30,p:{tint:'mono'}}],
+    wires:[[3,4,0],[0,4,1],[1,4,2],[2,4,3],[4,5,0],[5,6,0]]
+  },
+  'Animated Sine':{
+    nodes:[{type:'Noise',x:30,y:30,p:{scale:0.008,octaves:4,seed:7,animate:0.003,contrast:1.5},
+      mods:{contrast:{band:'time.sine',amount:0.5,period:6}, scale:{band:'time.tri',amount:0.4,period:9}}},
+      {type:'Colorize',x:230,y:30,p:{palette:'plasma',shift:0},
+        mods:{shift:{band:'time.ramp',amount:1,period:12}}},
+      {type:'Polar',x:430,y:30,p:{segments:8,twist:0,zoom:1},
+        mods:{twist:{band:'time.sine',amount:0.5,period:10}}},
+      {type:'Output',x:610,y:30,p:{tint:'mono'}}],
+    wires:[[0,1,0],[1,2,0],[2,3,0]]
+  },
   'Image — Halftone':{
     nodes:[{type:'ImageInput',x:30,y:30,p:{fit:'cover',tint:'gray',url:''}},
       {type:'Halftone',x:230,y:30,p:{cell:8,invert:'no',shape:'circle'}},
@@ -2781,7 +2887,7 @@ function loadFromStorage(){
     return false;
   }
 }
-const STUDIO_VERSION='9';
+const STUDIO_VERSION='10';
 // embed mode
 if(EMBED_MODE){
   document.body.classList.add('embed');
