@@ -125,6 +125,31 @@
     background:none;border:none;font-size:20px;font-family:inherit}
   #helpModal .close:hover{color:var(--acc)}
   #helpModal a{color:var(--acc)}
+  /* modulator UI */
+  .modBtn{display:inline-flex;align-items:center;justify-content:center;
+    width:18px;height:18px;border-radius:50%;border:1px solid rgba(255,255,255,0.15);
+    background:transparent;color:var(--mut);cursor:pointer;font-size:10px;line-height:1;
+    flex-shrink:0;padding:0;font-family:inherit}
+  .modBtn.bound{color:#7cf2c9;border-color:#7cf2c9;background:rgba(124,242,201,0.12);
+    box-shadow:0 0 8px rgba(124,242,201,0.25)}
+  .modBtn:hover{color:#fff;border-color:#fff}
+  .modPopover{position:fixed;z-index:50;
+    background:linear-gradient(140deg,rgba(255,255,255,0.10),rgba(255,255,255,0.02)),rgba(14,14,18,0.94);
+    backdrop-filter:blur(28px) saturate(180%);-webkit-backdrop-filter:blur(28px) saturate(180%);
+    border:1px solid rgba(255,255,255,0.16);border-radius:10px;padding:12px 14px;
+    box-shadow:inset 0 1px 0 rgba(255,255,255,0.18),0 16px 40px rgba(0,0,0,0.55);width:220px;color:#e8e8ea}
+  .modPopover .ph{font-size:10px;color:var(--mut);text-transform:uppercase;letter-spacing:0.12em;margin-bottom:8px}
+  .modPopover .ph b{color:var(--acc);text-transform:none;letter-spacing:0;font-weight:600;font-size:11px}
+  .modPopover .row{display:grid;grid-template-columns:60px 1fr;gap:8px;align-items:center;margin:6px 0}
+  .modPopover label{font-size:10px;color:var(--mut)}
+  .modPopover select, .modPopover input[type=range]{background:rgba(0,0,0,0.3);color:#e8e8ea;border:1px solid rgba(255,255,255,0.1);
+    padding:3px 6px;border-radius:4px;font:inherit;font-size:11px;width:100%}
+  .modPopover input[type=range]{padding:0}
+  .modPopover .amtVal{color:var(--acc);font-size:10px;text-align:right;font-family:ui-monospace,monospace}
+  .modPopover .clear{margin-top:10px;width:100%;padding:6px;background:transparent;border:1px solid rgba(255,255,255,0.1);
+    color:var(--warn);border-radius:5px;cursor:pointer;font:inherit;font-size:10px}
+  .modPopover .clear:hover{background:var(--warn);color:#000}
+  .modPopover .hint{font-size:9px;color:var(--mut);margin-top:8px;line-height:1.4}
   #recBtn.recording{color:#f27c7c !important;border-color:#f27c7c !important}
   #recOverlay{position:fixed;bottom:48px;right:12px;z-index:30;font-size:11px;color:#f27c7c;
     background:rgba(14,14,18,0.7);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);
@@ -215,6 +240,8 @@
     <p>Wire <b>source</b> nodes (Noise, FlowField, Webcam) into <b>filter</b> nodes (Halftone, ASCII, Polar, Bloom…) and out to an <b>Output</b>. Drag nodes from the Library on the left, click to edit parameters on the right.</p>
     <h4>Wiring</h4>
     <p>Drag from a node's <b>right port</b> to another's <b>left port</b>. Right-click a node to delete. The <b>Feedback</b> node lets you make loops.</p>
+    <h4>Audio reactive</h4>
+    <p>Add an <b>Audio</b> node and grant mic access. Then click the <b>⚡</b> next to any slider to bind it to <i>bass / mid / high / level / beat</i>. Amount can be negative for inverse reactivity.</p>
     <h4>Sharing</h4>
     <p>Click <b>↗ Share</b> to copy a remix link — anyone who opens it gets the exact graph and can tweak it. Try the <a href="gallery.html">Gallery</a> for inspiration.</p>
     <h4>Shortcuts</h4>
@@ -1525,13 +1552,33 @@ function gatherInputs(n){
   }
   return inputs;
 }
+function applyMods(n){
+  if(!n.mods || !window.mycelAudio) return null;
+  const def=NODE_DEFS[n.type];
+  let touched=false, base=null;
+  for(const [k, mod] of Object.entries(n.mods)){
+    if(!mod || !mod.band) continue;
+    const av=window.mycelAudio[mod.band];
+    if(av===undefined) continue;
+    const pdef=def.params.find(pp=>pp.k===k);
+    if(!pdef || pdef.t!=='range') continue;
+    if(!touched){ base={...n.p}; touched=true; }
+    const range=(pdef.max-pdef.min);
+    let v=base[k] + av*mod.amount*range;
+    if(v<pdef.min) v=pdef.min; if(v>pdef.max) v=pdef.max;
+    n.p[k]=v;
+  }
+  return base;
+}
 function evaluate(t){
   const order=topoSort();
   for(const id of order){
     const n=nodes.get(id); if(!n) continue;
     n.ensureBuffer();
+    const base=applyMods(n);
     try{ NODE_DEFS[n.type].proc(n, gatherInputs(n), t, n.buf); }
     catch(e){console.warn('node err',n.type,e);}
+    if(base) n.p=base;
   }
   // post-pass for Feedback nodes: capture current frame for next eval
   for(const id of order){
@@ -1721,9 +1768,13 @@ function renderInspector(){
       inp=document.createElement('input'); inp.type='range';
       inp.min=pr.min; inp.max=pr.max; inp.step=pr.step; inp.value=n.p[pr.k];
       const v=document.createElement('div'); v.className='val'; v.textContent=n.p[pr.k];
+      const modBtn=document.createElement('button');
+      modBtn.className='modBtn'+(n.mods?.[pr.k]?.band?' bound':'');
+      modBtn.textContent='⚡'; modBtn.title='Bind to audio';
+      modBtn.onclick=ev=>{ev.stopPropagation(); openModulator(n, pr, modBtn);};
       const wrap=document.createElement('div'); wrap.style.display='grid';
-      wrap.style.gridTemplateColumns='1fr 40px'; wrap.style.gap='4px';
-      wrap.appendChild(inp); wrap.appendChild(v);
+      wrap.style.gridTemplateColumns='1fr 18px 40px'; wrap.style.gap='4px';
+      wrap.appendChild(inp); wrap.appendChild(modBtn); wrap.appendChild(v);
       inp.addEventListener('input',()=>{n.p[pr.k]=parseFloat(inp.value); v.textContent=inp.value;});
       row.appendChild(wrap);
     } else if(pr.t==='select'){
@@ -1745,6 +1796,62 @@ function renderInspector(){
   const del=document.createElement('button'); del.className='delBtn'; del.textContent='Delete node';
   del.onclick=()=>deleteNode(n.id);
   body.appendChild(del);
+}
+/* ---------- modulator popover ----------------------------------------- */
+let modPop=null;
+function closeModulator(){ if(modPop){modPop.remove(); modPop=null;} }
+function openModulator(n, pr, anchor){
+  closeModulator();
+  if(!n.mods) n.mods={};
+  const cur = n.mods[pr.k] || {band:null, amount:0.3};
+  modPop=document.createElement('div'); modPop.className='modPopover';
+  const r=anchor.getBoundingClientRect();
+  modPop.style.left=Math.min(window.innerWidth-240, r.right+8)+'px';
+  modPop.style.top=Math.min(window.innerHeight-200, r.top)+'px';
+  modPop.innerHTML=`
+    <div class="ph">modulate <b>${pr.k}</b></div>
+    <div class="row"><label>Source</label>
+      <select class="band">
+        <option value="">— none —</option>
+        <option value="level">level</option>
+        <option value="bass">bass</option>
+        <option value="mid">mid</option>
+        <option value="high">high</option>
+        <option value="beat">beat (kick)</option>
+      </select>
+    </div>
+    <div class="row"><label>Amount</label>
+      <input type="range" class="amt" min="-1" max="1" step="0.01" />
+    </div>
+    <div class="row"><label></label><div class="amtVal"></div></div>
+    <button class="clear">unbind</button>
+    <div class="hint">Add an Audio node to capture the mic. Amount × (max−min) is added to the base value, scaled by the audio band 0–1.</div>`;
+  document.body.appendChild(modPop);
+  const bandSel=modPop.querySelector('.band');
+  const amtIn=modPop.querySelector('.amt');
+  const amtVal=modPop.querySelector('.amtVal');
+  bandSel.value=cur.band||'';
+  amtIn.value=cur.amount;
+  amtVal.textContent=Number(cur.amount).toFixed(2);
+  const update=()=>{
+    n.mods[pr.k]={band:bandSel.value||null, amount:parseFloat(amtIn.value)};
+    if(!bandSel.value) delete n.mods[pr.k];
+    anchor.classList.toggle('bound', !!n.mods[pr.k]?.band);
+    amtVal.textContent=parseFloat(amtIn.value).toFixed(2);
+  };
+  bandSel.onchange=update;
+  amtIn.oninput=update;
+  modPop.querySelector('.clear').onclick=()=>{
+    delete n.mods[pr.k]; anchor.classList.remove('bound'); closeModulator();
+  };
+  setTimeout(()=>{
+    document.addEventListener('mousedown',function close(ev){
+      if(modPop && !modPop.contains(ev.target) && ev.target!==anchor){
+        document.removeEventListener('mousedown',close);
+        closeModulator();
+      }
+    });
+  },0);
 }
 function deleteNode(id){
   for(let i=wires.length-1;i>=0;i--) if(wires[i].from===id||wires[i].to===id) wires.splice(i,1);
@@ -1912,7 +2019,7 @@ document.getElementById('resSel').onchange=function(){
 function serializeGraph(){
   return {
     v:STUDIO_VERSION,
-    nodes:[...nodes.values()].map(n=>({id:n.id,type:n.type,x:Math.round(n.x),y:Math.round(n.y),p:n.p})),
+    nodes:[...nodes.values()].map(n=>({id:n.id,type:n.type,x:Math.round(n.x),y:Math.round(n.y),p:n.p,mods:n.mods||undefined})),
     wires:wires.map(w=>({from:w.from,to:w.to,toPort:w.toPort||0})),
   };
 }
@@ -2204,6 +2311,26 @@ const PRESETS={
       {type:'Output',x:790,y:30,p:{tint:'mono'}}],
     wires:[[0,1,0],[1,2,0],[2,4,0],[3,4,1],[4,3,0],[4,5,0]]
   },
+  'Audio-Reactive Plasma':{
+    nodes:[{type:'Audio',x:30,y:160,p:{gain:2,smoothing:0.7,view:'none',color:'cyan'}},
+      {type:'Noise',x:30,y:30,p:{scale:0.005,octaves:4,seed:13,animate:0.004,contrast:1.4},
+        mods:{contrast:{band:'bass',amount:0.4}}},
+      {type:'Colorize',x:230,y:30,p:{palette:'plasma',shift:0},
+        mods:{shift:{band:'level',amount:0.3}}},
+      {type:'Bloom',x:400,y:30,p:{radius:8,intensity:1,threshold:0.4},
+        mods:{intensity:{band:'beat',amount:0.6}}},
+      {type:'Output',x:570,y:30,p:{tint:'mono'}}],
+    wires:[[1,2,0],[2,3,0],[3,4,0]]
+  },
+  'Audio-Reactive FlowField':{
+    nodes:[{type:'Audio',x:30,y:160,p:{gain:2,smoothing:0.6,view:'none',color:'green'}},
+      {type:'FlowField',x:30,y:30,p:{count:2000,scale:14,noiseInc:0.08,speed:2,curl:3,drift:0.002,fade:6,weight:1.2,palette:'aurora',seed:5},
+        mods:{speed:{band:'level',amount:0.5}, curl:{band:'mid',amount:0.4}}},
+      {type:'Bloom',x:230,y:30,p:{radius:6,intensity:0.8,threshold:0.3},
+        mods:{intensity:{band:'beat',amount:0.5}}},
+      {type:'Output',x:400,y:30,p:{tint:'mono'}}],
+    wires:[[1,2,0],[2,3,0]]
+  },
   'Audio Spectrum':{
     nodes:[{type:'Audio',x:30,y:30,p:{gain:2,smoothing:0.7,view:'spectrum',color:'cyan'}},
       {type:'Bloom',x:230,y:30,p:{radius:8,intensity:1.2,threshold:0.3}},
@@ -2267,6 +2394,7 @@ function loadGraph(g){
     }
     const n=addNode(nd.type, nd.x, nd.y);
     Object.assign(n.p, nd.p||{});
+    if(nd.mods) n.mods=nd.mods;
     // index-based key (preset format) AND original-id key (serialized format)
     idmap[i]=n.id;
     if(nd.id!==undefined) idmap[nd.id]=n.id;
@@ -2293,7 +2421,7 @@ function loadFromStorage(){
     return false;
   }
 }
-const STUDIO_VERSION='7';
+const STUDIO_VERSION='8';
 // embed mode
 if(EMBED_MODE){
   document.body.classList.add('embed');
